@@ -1,0 +1,142 @@
+---
+title: "Airline Data"
+author: "tygeremily"
+date: "01/25/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+library(RSQLite)
+library(ggplot2)
+
+delay.con <- dbConnect(RSQLite::SQLite(),
+                       dbname = "~/AirlineDelay.sqlite3")
+```
+
+1. What was the most popular airline in 2000?
+2. How many flights did that airline record in 2000?
+```{r}
+popair = dbGetQuery(delay.con,            
+               "SELECT COUNT(*), UniqueCarrier 
+               FROM AirlineDelay 
+               WHERE Year=2000 
+               GROUP BY UniqueCarrier 
+               ORDER BY COUNT(*) DESC LIMIT 10 ")
+# View(popair)
+```
+
+3. Since 2005, which airline has undertaken the longest flights (time) on average?
+```{r}
+longflight = dbGetQuery(delay.con, 
+              "SELECT AVG(ActualElapsedTime) AS Elapsedtime, UniqueCarrier           
+              FROM AirlineDelay           
+              WHERE (ActualElapsedTime IS NOT 'NA') AND Year >= 2005           
+              GROUP BY UniqueCarrier            
+              ORDER BY Elapsedtime DESC LIMIT 10")
+# View(longflight)
+```
+
+4. How many flights used a carrier with an E in the name? (e.g. XE)
+```{r}
+Ecarriers = dbGetQuery(delay.con,            
+               "SELECT COUNT(*), UniqueCarrier            
+           FROM AirlineDelay            
+           WHERE UniqueCarrier LIKE '%E%'            
+           GROUP BY UniqueCarrier ")
+# View(Ecarriers)
+```
+
+5. For each of the 22 years in the dataset, how many of the tail codes are listed as NA? 
+Paste the table of values.
+```{r}
+tailNAs = dbGetQuery(delay.con, 
+                      "SELECT COUNT(*), Year            
+                      FROM AirlineDelay            
+                      WHERE (TailNum IS 'NA') AND Year >= 2000
+                      GROUP BY Year")
+#View(tailNAs)
+```
+
+6. Which of the following Origin->Destination combinations have the largest (average) Arrival delays?
+```{r}
+largedelay = dbGetQuery(delay.con,            
+                         "SELECT COUNT(*), Origin || Dest as combined, 
+                         AVG(ArrDelay) as Avg_ArrDelay           
+                         FROM AirlineDelay            
+                         GROUP BY combined          
+                         ORDER BY Avg_ArrDelay DESC")
+# View(largedelay)
+```
+
+7. Are flights being given more (average) time to reach their destination for later years? Use ggplot to display the trend for each year in the dataset, and upload the image.
+```{r}
+Flighttimebyyear = dbGetQuery(delay.con,            
+                              "SELECT Year, AVG(CRSElapsedTime) as Time         
+                              FROM AirlineDelay            
+                              GROUP BY Year")
+# View(Flighttimebyyear)
+Flighttimebyyear = Flighttimebyyear[1:22,]
+
+timeyearplot = ggplot(Flighttimebyyear, aes(x = Year, y = Time)) +
+  geom_point() 
+timeyearplot
+
+ggsave("timeyearplot.png", plot = timeyearplot)
+```
+
+8. As a possible explanation, are the average flight distances getting longer every year? Use ggplot to display the trend for each year in the dataset, and upload the image.
+```{r}
+Flightdistancebyyear = dbGetQuery(delay.con,            
+                              "SELECT Year, AVG(Distance) as Distance          
+                              FROM AirlineDelay            
+                              GROUP BY Year")
+# View(Flightdistancebyyear)
+Flightdistancebyyear = Flightdistancebyyear[1:22,]
+
+distyearplot = ggplot(Flightdistancebyyear, aes(x = Year, y = Distance)) +
+  geom_point() 
+distyearplot
+
+ggsave("distyearplot.png", plot = distyearplot)
+```
+
+9. Compute the correlation (aka correlation coefficient) between the two quantities in the question above? I.e. the correlation between 1) The average flight distance for each year 2) The average scheduled time per flight for each year
+```{r}
+temp1 = list(Flighttimebyyear, Flightdistancebyyear)
+timedist <- Reduce(function(d1,d2) merge(d1,d2, by = c("Year"), all.x = TRUE), temp1)
+# View(timedist)
+
+corr = cor.test(timedist$Year, timedist$Distance)
+corr
+```
+
+10. Find the total number of delayed arrivals for each year (ArrDelay>0). Find the total number of delayed departures for each year (DepDelay>0). Fit a linear model between the two quantities and give the equation of the line (intercept and slope)
+```{r}
+delArr = dbGetQuery(delay.con,            
+                    "SELECT COUNT(*) as arrival, Year           
+                    FROM AirlineDelay
+                    WHERE ArrDelay > 0
+                    GROUP BY Year")
+# View(delArr)
+delArr = delArr[1:22,]
+
+delDep = dbGetQuery(delay.con,            
+                    "SELECT COUNT(*) as departure, Year           
+                    FROM AirlineDelay 
+                    WHERE DepDelay > 0 
+                    GROUP BY Year")
+# View(delDep)
+delDep = delDep[1:22,]
+
+temp2 = list(delArr, delDep)
+delays <- Reduce(function(d1,d2) merge(d1,d2, by = c("Year"), all.x = TRUE), temp2)
+# View(delays)
+
+model = lm(Year ~ arrival + departure, data = delays)
+model
+```
